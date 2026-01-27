@@ -1,0 +1,10 @@
+ObjectType = Image
+NDims = 3
+BinaryData = True
+BinaryDataByteOrderMSB = False
+TransformMatrix = 1 0 0 0 1 0 0 0 1
+Offset = -2000 -2000 0
+ElementSpacing = 50 50 50
+DimSize = 80 80 60
+ElementType = MET_FLOAT
+ElementDataFile = simulation-Dose.raw

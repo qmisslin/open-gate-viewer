@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "version": 1,
+    "timestamp": "2026-01-27T13:58:05.398Z",
+    "appName": "GateSimulationDesigner"
+  },
+  "config": {
+    "domainSize": {
+      "x": 4000,
+      "y": 3000,
+      "z": 4000
+    },
+    "voxelResolution": {
+      "x": 50,
+      "y": 50,
+      "z": 50
+    },
+    "offset": {
+      "x": -2000,
+      "y": 0,
+      "z": -2000
+    }
+  },
+  "camera": {
+    "position": [
+      5197.501002877636,
+      3372.1755201292117,
+      -7256.0885014904625
+    ],
+    "target": [
+      0,
+      0,
+      0
+    ]
+  },
+  "sources": [
+    {
+      "position": [
+        1295.4807004383356,
+        520.5706719682139,
+        1194.1198397955511
+      ],
+      "radius": 1716.56,
+      "doseCenter": 100,
+      "dosePeriphery": 10,
+      "falloff": "Linear"
+    }
+  ],
+  "assets": [
+    {
+      "type": "library_asset",
+      "path": "assets/scene_1.stl",
+      "name": "scene_1",
+      "position": [
+        0,
+        0,
+        -696.1131610142045
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        "XYZ"
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "type": "library_asset",
+      "path": "assets/barrel_1.stl",
+      "name": "barrel_1",
+      "position": [
+        1286.6957502753014,
+        0,
+        1176.318691847131
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        "XYZ"
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  ]
+}

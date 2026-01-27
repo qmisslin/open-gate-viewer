@@ -1,0 +1,13 @@
+ObjectType = Image
+NDims = 3
+BinaryData = True
+BinaryDataByteOrderMSB = False
+CompressedData = False
+TransformMatrix = 1 0 0 0 1 0 0 0 1
+Offset = -49500 -49500 -4500
+CenterOfRotation = 0 0 0
+ElementSpacing = 1000 1000 1000
+DimSize = 100 100 10
+AnatomicalOrientation = ???
+ElementType = MET_FLOAT
+ElementDataFile = room_TLE_posAB-Dose.raw
