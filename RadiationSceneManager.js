@@ -35,9 +35,9 @@ export class RadiationSceneManager {
         this.serializer = new SceneSerializer();
 
         this.simulationConfig = {
-            domainSize: { x: 4000, y: 3000, z: 4000 },
+            domainSize: { x: 100000, y: 10000, z: 100000 },
             voxelResolution: { x: 50, y: 50, z: 50 },
-            offset: { x: -2000, y: 0, z: -2000 }
+            offset: { x: -50000, y: -5000, z: -50000 }
         };
 
         this.initScene();
@@ -54,14 +54,24 @@ export class RadiationSceneManager {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x222222);
 
+        this.worldGroup = new THREE.Group();
+        this.worldGroup.position.set(0, this.simulationConfig.offset.y, 0);
+        this.scene.add(this.worldGroup);
+
         const aspect = this.container.clientWidth / this.container.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(45, aspect, 10, 100000);
-        this.camera.position.set(6000, 6000, 8000);
-        this.camera.lookAt(0, 1000, 0);
+
+        this.camera = new THREE.PerspectiveCamera(45, aspect, 100, 5000000);
+        this.camera.position.set(120000, 100000, 150000);
+        this.camera.lookAt(0, 0, 0);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        this.renderer.localClippingEnabled = true;
+
         this.container.appendChild(this.renderer.domElement);
     }
 
@@ -70,15 +80,24 @@ export class RadiationSceneManager {
         this.scene.add(ambientLight);
 
         const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-        dirLight.position.set(5000, 10000, 5000);
+        dirLight.position.set(50000, 100000, 50000);
+        dirLight.castShadow = true;
+
+        const d = 100000;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.camera.far = 300000;
+
         this.scene.add(dirLight);
     }
 
     initGrid() {
-        const size = 10000;
-        const divisions = 10;
-        const gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0x444444);
-        this.scene.add(gridHelper);
+        const size = 200000;
+        const divisions = 40;
+        this.gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0x444444);
+        this.worldGroup.add(this.gridHelper);
     }
 
     initControls() {
@@ -118,29 +137,50 @@ export class RadiationSceneManager {
         this.gui.width = 320;
 
         const updateBox = () => this.updateDoseBoxVisual();
+
+        const gridFolder = this.gui.addFolder('Scene / Grid Transform');
+
+        gridFolder.add(this.gridHelper, 'visible').name('Show Grid');
+
+        ['x', 'z'].forEach(axis => {
+            gridFolder.add(this.worldGroup.position, axis, -100000, 100000)
+                .name(`Grid Pos ${axis.toUpperCase()}`)
+                .listen();
+        });
+
         const domainFolder = this.gui.addFolder('Voxel Domain (Scene Coords)');
 
         ['x', 'y', 'z'].forEach(axis => {
-            domainFolder.add(this.simulationConfig.domainSize, axis, 100, 20000).name(`Size ${axis.toUpperCase()}`).onChange(updateBox);
+            domainFolder.add(this.simulationConfig.domainSize, axis, 100, 200000).name(`Size ${axis.toUpperCase()}`).onChange(updateBox);
         });
         ['x', 'y', 'z'].forEach(axis => {
-            domainFolder.add(this.simulationConfig.voxelResolution, axis, 0.1, 500).name(`Res ${axis.toUpperCase()}`).onChange(updateBox);
+            domainFolder.add(this.simulationConfig.voxelResolution, axis, 0.1, 5000).name(`Res ${axis.toUpperCase()}`).onChange(updateBox);
         });
         ['x', 'y', 'z'].forEach(axis => {
-            domainFolder.add(this.simulationConfig.offset, axis).name(`Offset ${axis.toUpperCase()}`).onChange(updateBox);
+            domainFolder.add(this.simulationConfig.offset, axis, -200000, 200000).name(`Offset ${axis.toUpperCase()}`).onChange(updateBox);
         });
 
         if (this.doseBoxHelper) this.scene.remove(this.doseBoxHelper);
         this.doseBoxHelper = new THREE.Box3Helper(new THREE.Box3(), 0xffff00);
+
+        this.doseBoxHelper.material.depthTest = false;
+        this.doseBoxHelper.material.transparent = true;
+
         this.scene.add(this.doseBoxHelper);
+
+        domainFolder.add(this.doseBoxHelper, 'visible').name('Show Domain Box');
+
         this.updateDoseBoxVisual();
     }
 
     updateDoseBoxVisual() {
         const { domainSize, offset } = this.simulationConfig;
+
         const min = new THREE.Vector3(offset.x, offset.y, offset.z);
         const max = min.clone().add(new THREE.Vector3(domainSize.x, domainSize.y, domainSize.z));
         this.doseBoxHelper.box.set(min, max);
+
+        this.worldGroup.position.y = offset.y;
     }
 
     onPointerDown(event) {
@@ -149,8 +189,10 @@ export class RadiationSceneManager {
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         this.raycaster.setFromCamera(this.mouse, this.camera);
-        const objects = [...this.meshes, ...this.sources.map(s => s.mesh)];
-        const intersects = this.raycaster.intersectObjects(objects);
+
+        const objectsToCheck = [...this.meshes, ...this.sources.map(s => s.mesh)];
+        const intersects = this.raycaster.intersectObjects(objectsToCheck);
+
         if (intersects.length > 0) this.transformControls.attach(intersects[0].object);
         else this.transformControls.detach();
     }
@@ -160,7 +202,7 @@ export class RadiationSceneManager {
         if (!selected) return;
         if (this.meshes.includes(selected)) {
             if (selected.userData.guiFolder) selected.userData.guiFolder.destroy();
-            this.scene.remove(selected);
+            this.worldGroup.remove(selected);
             this.meshes = this.meshes.filter(m => m !== selected);
             if (selected.geometry) selected.geometry.dispose();
             this.transformControls.detach();
@@ -169,7 +211,7 @@ export class RadiationSceneManager {
         const sourceRef = this.sources.find(s => s.mesh === selected);
         if (sourceRef) {
             if (sourceRef.guiFolder) sourceRef.guiFolder.destroy();
-            this.scene.remove(sourceRef.mesh);
+            this.worldGroup.remove(sourceRef.mesh);
             this.sources = this.sources.filter(s => s !== sourceRef);
             this.transformControls.detach();
             return;
@@ -178,13 +220,13 @@ export class RadiationSceneManager {
 
     clearScene() {
         [...this.sources].forEach(s => {
-            this.scene.remove(s.mesh);
+            this.worldGroup.remove(s.mesh);
             if (s.guiFolder) s.guiFolder.destroy();
         });
         this.sources = [];
 
         [...this.meshes].forEach(m => {
-            this.scene.remove(m);
+            this.worldGroup.remove(m);
             if (m.geometry) m.geometry.dispose();
             if (m.userData.guiFolder) m.userData.guiFolder.destroy();
         });
@@ -194,8 +236,6 @@ export class RadiationSceneManager {
             this.scene.remove(v);
             if (v.geometry) v.geometry.dispose();
             if (v.material) v.material.dispose();
-            // Note: GUI folders for volumes are destroyed inside MHDHandler remove logic
-            // But we should ideally track them. For now, initGUI() cleans all GUI.
         });
         this.importedVolumes = [];
 
@@ -258,8 +298,9 @@ export class RadiationSceneManager {
         mesh.userData.path = assetPath;
         mesh.userData.name = name;
 
-        this.scene.add(mesh);
+        this.worldGroup.add(mesh);
         this.meshes.push(mesh);
+
         this.transformControls.attach(mesh);
         this.addMeshGUI(mesh, name);
         if (onLoadCallback) onLoadCallback(mesh);
@@ -270,7 +311,7 @@ export class RadiationSceneManager {
         folder.add(mesh, 'visible');
         folder.add({
             delete: () => {
-                this.scene.remove(mesh);
+                this.worldGroup.remove(mesh);
                 this.meshes = this.meshes.filter(m => m !== mesh);
                 folder.destroy();
                 this.transformControls.detach();
@@ -294,19 +335,19 @@ export class RadiationSceneManager {
         mesh.scale.setScalar(sourceData.radius);
         mesh.userData.isSource = true;
 
-        this.scene.add(mesh);
+        this.worldGroup.add(mesh);
         this.sources.push(sourceData);
         sourceData.mesh = mesh;
 
         const folder = this.gui.addFolder(`Source ${this.sources.length}`);
         sourceData.guiFolder = folder;
-        folder.add(sourceData, 'radius', 10, 5000).name('Radius').listen().onChange(v => mesh.scale.setScalar(v));
+        folder.add(sourceData, 'radius', 10, 50000).name('Radius').listen().onChange(v => mesh.scale.setScalar(v));
         folder.add(sourceData, 'doseCenter', 0, 1000).listen();
         folder.add(sourceData, 'dosePeriphery', 0, 1000).listen();
         folder.add(sourceData, 'falloff', Object.keys(EasingFunctions)).listen();
         folder.add({
             delete: () => {
-                this.scene.remove(mesh);
+                this.worldGroup.remove(mesh);
                 this.sources = this.sources.filter(s => s !== sourceData);
                 folder.destroy();
                 this.transformControls.detach();
@@ -332,15 +373,17 @@ export class RadiationSceneManager {
             });
     }
 
-    calculateDoseAtPoint(point) {
+    calculateDoseAtPoint(point, worldSources) {
         let totalDose = 0;
-        for (const source of this.sources) {
-            const r = source.mesh.scale.x;
-            const d = point.distanceTo(source.mesh.position);
+
+        for (const s of worldSources) {
+            const d = point.distanceTo(s.worldPosition);
+            const r = s.data.mesh.scale.x;
+
             if (d <= r) {
                 const t = d / r;
-                const alpha = (EasingFunctions[source.falloff] || EasingFunctions.Linear)(t);
-                totalDose += (1 - alpha) * source.doseCenter + alpha * source.dosePeriphery;
+                const alpha = (EasingFunctions[s.data.falloff] || EasingFunctions.Linear)(t);
+                totalDose += (1 - alpha) * s.data.doseCenter + alpha * s.data.dosePeriphery;
             }
         }
         return totalDose;
@@ -354,6 +397,13 @@ export class RadiationSceneManager {
         const totalVoxels = dimGateX * dimGateY * dimGateZ;
 
         console.log(`Exporting: ${dimGateX}x${dimGateY}x${dimGateZ}`);
+
+        const worldSources = this.sources.map(s => {
+            const worldPos = new THREE.Vector3();
+            s.mesh.getWorldPosition(worldPos);
+            return { data: s, worldPosition: worldPos };
+        });
+
         const buffer = new Float32Array(totalVoxels);
         let idx = 0;
         const worldPos = new THREE.Vector3();
@@ -364,7 +414,8 @@ export class RadiationSceneManager {
                     worldPos.x = conf.offset.x + i * conf.voxelResolution.x;
                     worldPos.y = conf.offset.y + k * conf.voxelResolution.y;
                     worldPos.z = conf.offset.z + j * conf.voxelResolution.z;
-                    buffer[idx++] = this.calculateDoseAtPoint(worldPos);
+
+                    buffer[idx++] = this.calculateDoseAtPoint(worldPos, worldSources);
                 }
             }
         }
