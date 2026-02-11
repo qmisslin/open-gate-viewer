@@ -54,12 +54,14 @@ export class RadiationSceneManager {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x222222);
 
+        // World group containing grid and imported objects
         this.worldGroup = new THREE.Group();
         this.worldGroup.position.set(0, this.simulationConfig.offset.y, 0);
         this.scene.add(this.worldGroup);
 
         const aspect = this.container.clientWidth / this.container.clientHeight;
 
+        // Camera setup for large scale scene
         this.camera = new THREE.PerspectiveCamera(45, aspect, 100, 5000000);
         this.camera.position.set(120000, 100000, 150000);
         this.camera.lookAt(0, 0, 0);
@@ -70,6 +72,7 @@ export class RadiationSceneManager {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+        // Local clipping enabled
         this.renderer.localClippingEnabled = true;
 
         this.container.appendChild(this.renderer.domElement);
@@ -138,6 +141,7 @@ export class RadiationSceneManager {
 
         const updateBox = () => this.updateDoseBoxVisual();
 
+        // Folder: Grid & Scene Transform
         const gridFolder = this.gui.addFolder('Scene / Grid Transform');
 
         gridFolder.add(this.gridHelper, 'visible').name('Show Grid');
@@ -148,13 +152,15 @@ export class RadiationSceneManager {
                 .listen();
         });
 
+        // Folder: Voxel Domain
         const domainFolder = this.gui.addFolder('Voxel Domain (Scene Coords)');
 
         ['x', 'y', 'z'].forEach(axis => {
             domainFolder.add(this.simulationConfig.domainSize, axis, 100, 200000).name(`Size ${axis.toUpperCase()}`).onChange(updateBox);
         });
+        // Use integer step for Resolution since it represents a count
         ['x', 'y', 'z'].forEach(axis => {
-            domainFolder.add(this.simulationConfig.voxelResolution, axis, 0.1, 5000).name(`Res ${axis.toUpperCase()}`).onChange(updateBox);
+            domainFolder.add(this.simulationConfig.voxelResolution, axis, 1, 500, 1).name(`Res ${axis.toUpperCase()} (Count)`).onChange(updateBox);
         });
         ['x', 'y', 'z'].forEach(axis => {
             domainFolder.add(this.simulationConfig.offset, axis, -200000, 200000).name(`Offset ${axis.toUpperCase()}`).onChange(updateBox);
@@ -163,11 +169,11 @@ export class RadiationSceneManager {
         if (this.doseBoxHelper) this.scene.remove(this.doseBoxHelper);
         this.doseBoxHelper = new THREE.Box3Helper(new THREE.Box3(), 0xffff00);
 
+        // Visual fix: Disable depth test to see box through objects
         this.doseBoxHelper.material.depthTest = false;
         this.doseBoxHelper.material.transparent = true;
 
         this.scene.add(this.doseBoxHelper);
-
         domainFolder.add(this.doseBoxHelper, 'visible').name('Show Domain Box');
 
         this.updateDoseBoxVisual();
@@ -391,12 +397,22 @@ export class RadiationSceneManager {
 
     async exportGateFiles() {
         const conf = this.simulationConfig;
-        const dimGateX = Math.floor(conf.domainSize.x / conf.voxelResolution.x);
-        const dimGateY = Math.floor(conf.domainSize.z / conf.voxelResolution.z);
-        const dimGateZ = Math.floor(conf.domainSize.y / conf.voxelResolution.y);
+
+        // Corrected Logic: voxelResolution IS the count (Dimension)
+        // We calculate Spacing based on Domain Size / Count
+
+        const dimGateX = Math.floor(conf.voxelResolution.x);
+        // Note: Mapping Y scene to Z Gate, Z scene to Y Gate
+        const dimGateY = Math.floor(conf.voxelResolution.z);
+        const dimGateZ = Math.floor(conf.voxelResolution.y);
+
+        const spacingX = conf.domainSize.x / dimGateX;
+        const spacingY = conf.domainSize.z / dimGateY;
+        const spacingZ = conf.domainSize.y / dimGateZ;
+
         const totalVoxels = dimGateX * dimGateY * dimGateZ;
 
-        console.log(`Exporting: ${dimGateX}x${dimGateY}x${dimGateZ}`);
+        console.log(`Exporting: ${dimGateX}x${dimGateY}x${dimGateZ} (Spacing: ${spacingX.toFixed(2)}, ${spacingY.toFixed(2)}, ${spacingZ.toFixed(2)})`);
 
         const worldSources = this.sources.map(s => {
             const worldPos = new THREE.Vector3();
@@ -411,9 +427,10 @@ export class RadiationSceneManager {
         for (let k = 0; k < dimGateZ; k++) {
             for (let j = 0; j < dimGateY; j++) {
                 for (let i = 0; i < dimGateX; i++) {
-                    worldPos.x = conf.offset.x + i * conf.voxelResolution.x;
-                    worldPos.y = conf.offset.y + k * conf.voxelResolution.y;
-                    worldPos.z = conf.offset.z + j * conf.voxelResolution.z;
+                    // Coordinates calculation now uses the calculated spacing
+                    worldPos.x = conf.offset.x + i * spacingX;
+                    worldPos.y = conf.offset.y + k * spacingZ; // k iterates Z (up), so uses spacingZ
+                    worldPos.z = conf.offset.z + j * spacingY; // j iterates Y (depth), so uses spacingY
 
                     buffer[idx++] = this.calculateDoseAtPoint(worldPos, worldSources);
                 }
@@ -426,7 +443,9 @@ export class RadiationSceneManager {
             'ObjectType = Image', 'NDims = 3', 'BinaryData = True', 'BinaryDataByteOrderMSB = False',
             'TransformMatrix = 1 0 0 0 1 0 0 0 1',
             `Offset = ${conf.offset.x} ${conf.offset.z} ${conf.offset.y}`,
-            `ElementSpacing = ${conf.voxelResolution.x} ${conf.voxelResolution.z} ${conf.voxelResolution.y}`,
+            // ElementSpacing is the calculated step size
+            `ElementSpacing = ${spacingX} ${spacingY} ${spacingZ}`,
+            // DimSize is the count (Resolution)
             `DimSize = ${dimGateX} ${dimGateY} ${dimGateZ}`,
             'ElementType = MET_FLOAT', `ElementDataFile = ${rawFileName}`
         ].join('\r\n');
