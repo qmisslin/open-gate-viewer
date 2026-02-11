@@ -106,7 +106,18 @@ export class RadiationSceneManager {
     initControls() {
         this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         this.orbitControls.enableDamping = true;
+        this.orbitControls.dampingFactor = 0.05;
         this.orbitControls.maxPolarAngle = Math.PI / 2;
+
+        this.renderer.domElement.addEventListener('wheel', (event) => {
+            const isTrackpad = Math.abs(event.deltaY) < 50;
+
+            if (isTrackpad) {
+                this.orbitControls.zoomSpeed = 30.0;
+            } else {
+                this.orbitControls.zoomSpeed = 1.0;
+            }
+        }, { passive: true });
 
         this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
         this.transformControls.addEventListener('dragging-changed', (event) => {
@@ -142,7 +153,6 @@ export class RadiationSceneManager {
 
         const updateBox = () => this.updateDoseBoxVisual();
 
-        // Folder: Grid & Scene Transform
         const gridFolder = this.gui.addFolder('Scene / Grid Transform');
 
         gridFolder.add(this.gridHelper, 'visible').name('Show Grid');
@@ -153,7 +163,6 @@ export class RadiationSceneManager {
                 .listen();
         });
 
-        // Folder: Voxel Domain
         const domainFolder = this.gui.addFolder('Voxel Domain (Scene Coords)');
 
         ['x', 'y', 'z'].forEach(axis => {
@@ -169,7 +178,6 @@ export class RadiationSceneManager {
         if (this.doseBoxHelper) this.scene.remove(this.doseBoxHelper);
         this.doseBoxHelper = new THREE.Box3Helper(new THREE.Box3(), 0xffff00);
 
-        // Visual fix: Disable depth test to see box through objects
         this.doseBoxHelper.material.depthTest = false;
         this.doseBoxHelper.material.transparent = true;
 
@@ -189,18 +197,14 @@ export class RadiationSceneManager {
         this.worldGroup.position.y = offset.y;
     }
 
-    // New: Frame Selected Object or Domain
     frameSelected() {
         const selected = this.transformControls.object;
         let box;
 
         if (selected) {
-            // Frame the selected object
-            // Note: setFromObject calculates world coordinates
             box = new THREE.Box3().setFromObject(selected);
-            if (box.isEmpty()) return; // Protection
+            if (box.isEmpty()) return;
         } else {
-            // Frame the entire Simulation Domain if nothing is selected
             const { domainSize, offset } = this.simulationConfig;
             const min = new THREE.Vector3(offset.x, offset.y, offset.z);
             const max = min.clone().add(new THREE.Vector3(domainSize.x, domainSize.y, domainSize.z));
@@ -217,27 +221,21 @@ export class RadiationSceneManager {
         box.getSize(size);
         box.getCenter(center);
 
-        // Calculate the distance to fit the bounding box
         const maxSize = Math.max(size.x, size.y, size.z);
         const fitHeightDistance = maxSize / (2 * Math.atan(Math.PI * this.camera.fov / 360));
         const fitWidthDistance = fitHeightDistance / this.camera.aspect;
-        const distance = 1.2 * Math.max(fitHeightDistance, fitWidthDistance); // 1.2 multiplier for padding
+        const distance = 1.2 * Math.max(fitHeightDistance, fitWidthDistance);
 
-        // Determine direction from current camera position to the new center target
         const direction = this.camera.position.clone()
             .sub(this.orbitControls.target)
             .normalize()
             .multiplyScalar(distance);
 
-        // Update Controls target
         this.orbitControls.target.copy(center);
-
-        // Update Camera Position
         this.camera.position.copy(center).add(direction);
 
-        // Adjust Near/Far planes to ensure object is not clipped
         this.camera.near = distance / 100;
-        this.camera.far = distance * 100; // Ensure we see far enough
+        this.camera.far = distance * 100;
         this.camera.updateProjectionMatrix();
 
         this.orbitControls.update();
@@ -354,9 +352,6 @@ export class RadiationSceneManager {
         const material = new THREE.MeshPhongMaterial({ color: 0x607d8b, specular: 0x111111, shininess: 200 });
         const mesh = new THREE.Mesh(geometry, material);
 
-        // Reverted: Removed 10x scale to keep original size
-        // mesh.scale.set(10, 10, 10); 
-
         mesh.castShadow = true; mesh.receiveShadow = true;
         mesh.userData.isAsset = isAsset;
         mesh.userData.path = assetPath;
@@ -367,7 +362,6 @@ export class RadiationSceneManager {
 
         this.transformControls.attach(mesh);
         this.addMeshGUI(mesh, name);
-
         if (onLoadCallback) onLoadCallback(mesh);
     }
 
