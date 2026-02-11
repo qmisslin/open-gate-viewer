@@ -124,6 +124,7 @@ export class RadiationSceneManager {
                 case 't': this.transformControls.setMode('translate'); break;
                 case 'r': this.transformControls.setMode('rotate'); break;
                 case 'e': this.transformControls.setMode('scale'); break;
+                case 'f': this.frameSelected(); break; // Frame Selected
                 case 'escape': this.transformControls.detach(); break;
                 case 'delete': this.deleteSelected(); break;
             }
@@ -158,7 +159,6 @@ export class RadiationSceneManager {
         ['x', 'y', 'z'].forEach(axis => {
             domainFolder.add(this.simulationConfig.domainSize, axis, 100, 200000).name(`Size ${axis.toUpperCase()}`).onChange(updateBox);
         });
-        // Use integer step for Resolution since it represents a count
         ['x', 'y', 'z'].forEach(axis => {
             domainFolder.add(this.simulationConfig.voxelResolution, axis, 1, 500, 1).name(`Res ${axis.toUpperCase()} (Count)`).onChange(updateBox);
         });
@@ -187,6 +187,60 @@ export class RadiationSceneManager {
         this.doseBoxHelper.box.set(min, max);
 
         this.worldGroup.position.y = offset.y;
+    }
+
+    // New: Frame Selected Object or Domain
+    frameSelected() {
+        const selected = this.transformControls.object;
+        let box;
+
+        if (selected) {
+            // Frame the selected object
+            // Note: setFromObject calculates world coordinates
+            box = new THREE.Box3().setFromObject(selected);
+            if (box.isEmpty()) return; // Protection
+        } else {
+            // Frame the entire Simulation Domain if nothing is selected
+            const { domainSize, offset } = this.simulationConfig;
+            const min = new THREE.Vector3(offset.x, offset.y, offset.z);
+            const max = min.clone().add(new THREE.Vector3(domainSize.x, domainSize.y, domainSize.z));
+            box = new THREE.Box3(min, max);
+        }
+
+        this.fitCameraToSelection(box);
+    }
+
+    fitCameraToSelection(box) {
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+
+        box.getSize(size);
+        box.getCenter(center);
+
+        // Calculate the distance to fit the bounding box
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const fitHeightDistance = maxSize / (2 * Math.atan(Math.PI * this.camera.fov / 360));
+        const fitWidthDistance = fitHeightDistance / this.camera.aspect;
+        const distance = 1.2 * Math.max(fitHeightDistance, fitWidthDistance); // 1.2 multiplier for padding
+
+        // Determine direction from current camera position to the new center target
+        const direction = this.camera.position.clone()
+            .sub(this.orbitControls.target)
+            .normalize()
+            .multiplyScalar(distance);
+
+        // Update Controls target
+        this.orbitControls.target.copy(center);
+
+        // Update Camera Position
+        this.camera.position.copy(center).add(direction);
+
+        // Adjust Near/Far planes to ensure object is not clipped
+        this.camera.near = distance / 100;
+        this.camera.far = distance * 100; // Ensure we see far enough
+        this.camera.updateProjectionMatrix();
+
+        this.orbitControls.update();
     }
 
     onPointerDown(event) {
@@ -299,6 +353,10 @@ export class RadiationSceneManager {
 
         const material = new THREE.MeshPhongMaterial({ color: 0x607d8b, specular: 0x111111, shininess: 200 });
         const mesh = new THREE.Mesh(geometry, material);
+
+        // Reverted: Removed 10x scale to keep original size
+        // mesh.scale.set(10, 10, 10); 
+
         mesh.castShadow = true; mesh.receiveShadow = true;
         mesh.userData.isAsset = isAsset;
         mesh.userData.path = assetPath;
@@ -309,6 +367,7 @@ export class RadiationSceneManager {
 
         this.transformControls.attach(mesh);
         this.addMeshGUI(mesh, name);
+
         if (onLoadCallback) onLoadCallback(mesh);
     }
 
@@ -398,11 +457,7 @@ export class RadiationSceneManager {
     async exportGateFiles() {
         const conf = this.simulationConfig;
 
-        // Corrected Logic: voxelResolution IS the count (Dimension)
-        // We calculate Spacing based on Domain Size / Count
-
         const dimGateX = Math.floor(conf.voxelResolution.x);
-        // Note: Mapping Y scene to Z Gate, Z scene to Y Gate
         const dimGateY = Math.floor(conf.voxelResolution.z);
         const dimGateZ = Math.floor(conf.voxelResolution.y);
 
@@ -427,10 +482,9 @@ export class RadiationSceneManager {
         for (let k = 0; k < dimGateZ; k++) {
             for (let j = 0; j < dimGateY; j++) {
                 for (let i = 0; i < dimGateX; i++) {
-                    // Coordinates calculation now uses the calculated spacing
                     worldPos.x = conf.offset.x + i * spacingX;
-                    worldPos.y = conf.offset.y + k * spacingZ; // k iterates Z (up), so uses spacingZ
-                    worldPos.z = conf.offset.z + j * spacingY; // j iterates Y (depth), so uses spacingY
+                    worldPos.y = conf.offset.y + k * spacingZ;
+                    worldPos.z = conf.offset.z + j * spacingY;
 
                     buffer[idx++] = this.calculateDoseAtPoint(worldPos, worldSources);
                 }
@@ -443,9 +497,7 @@ export class RadiationSceneManager {
             'ObjectType = Image', 'NDims = 3', 'BinaryData = True', 'BinaryDataByteOrderMSB = False',
             'TransformMatrix = 1 0 0 0 1 0 0 0 1',
             `Offset = ${conf.offset.x} ${conf.offset.z} ${conf.offset.y}`,
-            // ElementSpacing is the calculated step size
             `ElementSpacing = ${spacingX} ${spacingY} ${spacingZ}`,
-            // DimSize is the count (Resolution)
             `DimSize = ${dimGateX} ${dimGateY} ${dimGateZ}`,
             'ElementType = MET_FLOAT', `ElementDataFile = ${rawFileName}`
         ].join('\r\n');
